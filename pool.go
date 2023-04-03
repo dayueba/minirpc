@@ -59,3 +59,16 @@ func (p *typePools) Get(t reflect.Type) interface{} {
 
 	return pool.Get()
 }
+
+var callPool = sync.Pool{
+	New: func() any {
+		return &Call{}
+	},
+}
+
+func acquireCall() *Call {
+	return callPool.Get().(*Call)
+}
+func releaseAsyncResult(call *Call) {
+	callPool.Put(call)
+}

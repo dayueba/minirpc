@@ -10,3 +10,8 @@
 
 至于此项目如何做压测，我们直接fork[鸟窝老师的压测仓库](https://github.com/rpcxio/rpcx-benchmark)，模仿他的代码，为自己的rpc框架增加上[压测代码](https://github.com/dayueba/rpc-benchmark)
 
+## 常用优化
+我们基于tcp协议，可以很简单的实现一个支持长连接的rpc。
+
+1. 使用sync.Pool 优化
+   - Call

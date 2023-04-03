@@ -7,6 +7,7 @@ import (
 	"minirpc/protocol"
 	"net"
 	"sync"
+	"time"
 )
 
 // ServerError represents an error that has been returned from
@@ -26,6 +27,7 @@ type Call struct {
 	Reply         any
 	Error         error
 	Done          chan *Call
+	Seq           uint64
 }
 
 func (call *Call) done() {
@@ -126,13 +128,37 @@ func (c *client) Call(servicePath, serviceMethod string, args any, reply any) er
 	return call.Error
 }
 
-func (c *client) Go(servicePath, serviceMethod string, args any, reply any, done chan *Call) *Call {
-	call := &Call{
-		ServiceMethod: serviceMethod,
-		ServicePath:   servicePath,
-		Args:          args,
-		Reply:         reply,
+func (c *client) CallTimeout(servicePath, serviceMethod string, args any, reply any, timeout time.Duration) error {
+	call := c.Go(servicePath, serviceMethod, args, reply, make(chan *Call, 1))
+	t := time.NewTimer(timeout)
+
+	select {
+	case doneCall := <-call.Done:
+		//releaseAsyncResult(m)
+		return doneCall.Error
+	case <-t.C:
+		//m.Cancel()
+		//err = getClientTimeoutError(c, timeout)
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+		delete(c.pending, call.Seq)
+		return errors.New("timeout")
 	}
+}
+
+func (c *client) Go(servicePath, serviceMethod string, args any, reply any, done chan *Call) *Call {
+	call := acquireCall()
+	defer releaseAsyncResult(call)
+	call.ServiceMethod = serviceMethod
+	call.ServicePath = servicePath
+	call.Args = args
+	call.Reply = reply
+	//call := &Call{
+	//	ServiceMethod: serviceMethod,
+	//	ServicePath:   servicePath,
+	//	Args:          args,
+	//	Reply:         reply,
+	//}
 	if done == nil {
 		done = make(chan *Call, 10) // buffered.
 	} else {
@@ -175,6 +201,7 @@ func (c *client) send(call *Call) {
 	c.seq++
 	c.pending[seq] = call
 	c.mutex.Unlock()
+	call.Seq = c.seq
 
 	// 发送请求
 	//c.request.Seq = seq
