@@ -6,13 +6,14 @@ import (
 	"go/token"
 	"io"
 	"log"
-	"minirpc/protocol"
 	"net"
 	"reflect"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/dayueba/minirpc/protocol"
 )
 
 type Server struct {

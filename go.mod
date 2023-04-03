@@ -1,4 +1,4 @@
-module minirpc
+module github.com/dayueba/minirpc
 
 go 1.18
 

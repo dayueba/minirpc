@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"minirpc"
-	data "minirpc/examples"
+
+	"github.com/dayueba/minirpc"
+	data "github.com/dayueba/minirpc/examples"
 )
 
 func main() {

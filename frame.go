@@ -2,8 +2,9 @@ package minirpc
 
 import (
 	"context"
-	"minirpc/protocol"
 	"net"
+
+	"github.com/dayueba/minirpc/protocol"
 )
 
 const defaultReadChanSize = 10

@@ -4,10 +4,11 @@ import (
 	"errors"
 	"io"
 	"log"
-	"minirpc/protocol"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/dayueba/minirpc/protocol"
 )
 
 // ServerError represents an error that has been returned from
