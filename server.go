@@ -190,6 +190,9 @@ func (server *Server) handleConn(conn net.Conn) error {
 }
 
 func (server *Server) handleRequest(ctx context.Context, req *protocol.Message, conn net.Conn) {
+	log := logrus.WithFields(logrus.Fields{
+		"func": "handleRequest",
+	})
 	defer func() {
 		if err := recover(); err != nil {
 			// todo: deal error
@@ -210,9 +213,15 @@ func (server *Server) handleRequest(ctx context.Context, req *protocol.Message, 
 	}
 	if err != nil {
 		// todo: deal error
+		log.Error(err)
 	}
 	argv := reflectTypePools.Get(mtype.ArgType)
-	err = msgpackCodec.Decode(req.Payload, argv)
+	codec, ok := Codecs[req.SerializeType()]
+	if !ok {
+		// todo: 序列化类型错误
+		log.Error("没有找到codec", req.SerializeType())
+	}
+	err = codec.Decode(req.Payload, argv)
 	if err != nil {
 
 	}
@@ -224,7 +233,7 @@ func (server *Server) handleRequest(ctx context.Context, req *protocol.Message, 
 		err = svc.call(ctx, mtype, reflect.ValueOf(argv), reflect.ValueOf(replyv))
 	}
 	reflectTypePools.Put(mtype.ArgType, argv)
-	res.Payload, err = msgpackCodec.Encode(replyv)
+	res.Payload, err = codec.Encode(replyv)
 	defer reflectTypePools.Put(mtype.ReplyType, replyv)
 	if err != nil {
 

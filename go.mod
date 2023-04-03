@@ -3,10 +3,12 @@ module github.com/dayueba/minirpc
 go 1.18
 
 require (
+	github.com/gogo/protobuf v1.3.2
 	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tinylib/msgp v1.1.8
 	github.com/vmihailenco/msgpack/v5 v5.3.5
+	google.golang.org/protobuf v1.30.0
 )
 
 require (

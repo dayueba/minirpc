@@ -11,8 +11,7 @@ import (
 	"github.com/dayueba/minirpc/protocol"
 )
 
-// ServerError represents an error that has been returned from
-// the remote side of the RPC connection.
+// ServerError represents an error that has been returned from the remote side of the RPC connection.
 type ServerError string
 
 func (e ServerError) Error() string {
@@ -57,20 +56,41 @@ type client struct {
 	pending  map[uint64]*Call
 	closing  bool
 	shutdown bool
+
+	opts *ClientOptions
 }
 
-func NewClient(addr string) (*client, error) {
+type ClientOptions struct {
+	SerializeType protocol.SerializeType
+}
+
+type ClientOption func(*ClientOptions)
+
+func WithSerializeType(serializeType protocol.SerializeType) ClientOption {
+	return func(o *ClientOptions) { o.SerializeType = serializeType }
+}
+
+func NewClient(addr string, opts ...ClientOption) (*client, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-	c := &client{conn: conn, pending: make(map[uint64]*Call)}
+	c := &client{conn: conn, pending: make(map[uint64]*Call), opts: &ClientOptions{
+		SerializeType: protocol.MsgPack, // default
+	}}
+	for _, o := range opts {
+		o(c.opts)
+	}
 	go c.readloop()
 	return c, nil
 }
 
 func (c *client) readloop() {
 	var err error
+	codec, ok := Codecs[c.opts.SerializeType]
+	if !ok {
+
+	}
 	for err == nil {
 		res := protocol.NewMessage()
 		err := res.Decode(c.conn)
@@ -93,7 +113,8 @@ func (c *client) readloop() {
 		default:
 			data := res.Payload
 			if len(data) > 0 {
-				err = msgpackCodec.Decode(data, call.Reply)
+
+				err = codec.Decode(data, call.Reply)
 				if err != nil {
 					call.Error = err
 				}
@@ -198,6 +219,13 @@ func (c *client) send(call *Call) {
 		return
 	}
 
+	serializeType := c.opts.SerializeType
+	codec, ok := Codecs[serializeType]
+	if !ok {
+		// todo: deal error
+		panic("没有codec")
+	}
+
 	seq := c.seq
 	c.seq++
 	c.pending[seq] = call
@@ -210,10 +238,11 @@ func (c *client) send(call *Call) {
 	//err := c.codec.WriteRequest()
 	req := protocol.NewMessage()
 	req.SetSeq(seq)
+	req.SetSerializeType(c.opts.SerializeType)
 	req.ServicePath = call.ServicePath
 	req.ServiceMethod = call.ServiceMethod
 
-	data, err := msgpackCodec.Encode(call.Args)
+	data, err := codec.Encode(call.Args)
 	if err != nil {
 		c.mutex.Lock()
 		delete(c.pending, seq)

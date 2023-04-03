@@ -20,6 +20,20 @@ const (
 	Error
 )
 
+// SerializeType defines serialization type of payload.
+type SerializeType byte
+
+const (
+	// SerializeNone uses raw []byte and don't serialize/deserialize
+	SerializeNone SerializeType = iota
+	// JSON for payload.
+	JSON
+	// ProtoBuffer for payload.
+	ProtoBuffer
+	// MsgPack for payload
+	MsgPack
+)
+
 type Message struct {
 	*Header
 	ServicePath   string
@@ -36,18 +50,26 @@ func NewMessage() *Message {
 	}
 }
 
-// Header 9个字节，第一个字节存储元数据，目前只有一个bit存储该请求成功还是失败
-// 后面8字节存储seq
 type Header [headerLen]byte
 
 // MessageStatusType returns the message status type.
 func (h *Header) MessageStatusType() MessageStatusType {
-	return MessageStatusType(h[0] & 0x03)
+	return MessageStatusType(h[0] & 0x01)
 }
 
 // SetMessageStatusType sets message status type.
 func (h *Header) SetMessageStatusType(mt MessageStatusType) {
-	h[2] = (h[0] &^ 0x03) | (byte(mt) & 0x03)
+	h[0] = (h[0] &^ 0x01) | (byte(mt) & 0x01)
+}
+
+// SerializeType returns serialization type of payload.
+func (h *Header) SerializeType() SerializeType {
+	return SerializeType((h[0] & 0x06) >> 1)
+}
+
+// SetSerializeType sets the serialization type.
+func (h *Header) SetSerializeType(st SerializeType) {
+	h[0] = (h[0] &^ 0x06) | (byte(st) << 1)
 }
 
 // Seq returns sequence number of messages.
