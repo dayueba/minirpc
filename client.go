@@ -70,7 +70,7 @@ func WithSerializeType(serializeType protocol.SerializeType) ClientOption {
 	return func(o *ClientOptions) { o.SerializeType = serializeType }
 }
 
-func NewClient(addr string, opts ...ClientOption) (*client, error) {
+func NewClient(addr string, opts ...ClientOption) (Client, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
