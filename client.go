@@ -1,6 +1,7 @@
 package minirpc
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log"
@@ -18,7 +19,10 @@ func (e ServerError) Error() string {
 	return string(e)
 }
 
-var ErrShutdown = errors.New("connection is shut down")
+var (
+	ErrShutdown             = errors.New("connection is shut down")
+	ErrUnknownSerializeType = errors.New("unknown serialize type")
+)
 
 type Call struct {
 	ServicePath   string
@@ -43,12 +47,13 @@ type Client interface {
 	Call(path, method string, args any, reply any) error
 	// Go 异步调用
 	Go(path, method string, args any, reply any, done chan *Call) *Call
+	Close() error
 }
 
 var _ Client = (*client)(nil)
 
 type client struct {
-	conn net.Conn
+	conn *Connection
 
 	reqMutex sync.Mutex
 	mutex    sync.Mutex
@@ -75,7 +80,7 @@ func NewClient(addr string, opts ...ClientOption) (Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &client{conn: conn, pending: make(map[uint64]*Call), opts: &ClientOptions{
+	c := &client{conn: wrapConn(conn), pending: make(map[uint64]*Call), opts: &ClientOptions{
 		SerializeType: protocol.MsgPack, // default
 	}}
 	for _, o := range opts {
@@ -89,11 +94,10 @@ func (c *client) readloop() {
 	var err error
 	codec, ok := Codecs[c.opts.SerializeType]
 	if !ok {
-
+		panic(ErrUnknownSerializeType)
 	}
 	for err == nil {
-		res := protocol.NewMessage()
-		err := res.Decode(c.conn)
+		res, err := c.conn.ReadMessage(context.Background())
 		if err != nil {
 			break
 		}
@@ -156,7 +160,6 @@ func (c *client) CallTimeout(servicePath, serviceMethod string, args any, reply 
 
 	select {
 	case doneCall := <-call.Done:
-		//releaseAsyncResult(m)
 		return doneCall.Error
 	case <-t.C:
 		//m.Cancel()
@@ -175,12 +178,7 @@ func (c *client) Go(servicePath, serviceMethod string, args any, reply any, done
 	call.ServicePath = servicePath
 	call.Args = args
 	call.Reply = reply
-	//call := &Call{
-	//	ServiceMethod: serviceMethod,
-	//	ServicePath:   servicePath,
-	//	Args:          args,
-	//	Reply:         reply,
-	//}
+
 	if done == nil {
 		done = make(chan *Call, 10) // buffered.
 	} else {
@@ -202,7 +200,8 @@ func (c *client) Close() error {
 	}
 	c.closing = true
 	c.mutex.Unlock()
-	//return client.codec.Close()
+	// todo 关闭readloop 和writeloop
+	c.conn.closed <- struct{}{}
 	return nil
 }
 
@@ -222,8 +221,7 @@ func (c *client) send(call *Call) {
 	serializeType := c.opts.SerializeType
 	codec, ok := Codecs[serializeType]
 	if !ok {
-		// todo: deal error
-		panic("没有codec")
+		panic(ErrUnknownSerializeType)
 	}
 
 	seq := c.seq
@@ -233,9 +231,6 @@ func (c *client) send(call *Call) {
 	call.Seq = c.seq
 
 	// 发送请求
-	//c.request.Seq = seq
-	//c.request.ServiceMethod = call.ServiceMethod
-	//err := c.codec.WriteRequest()
 	req := protocol.NewMessage()
 	req.SetSeq(seq)
 	req.SetSerializeType(c.opts.SerializeType)
@@ -253,17 +248,7 @@ func (c *client) send(call *Call) {
 	}
 	req.Payload = data
 
-	allData, err := req.Encode()
-	if err != nil {
-		c.mutex.Lock()
-		delete(c.pending, seq)
-		c.mutex.Unlock()
-		call.Error = err
-		call.done()
-		return
-	}
-
-	_, err = c.conn.Write(allData)
+	err = c.conn.WriteMessage(context.Background(), req)
 	if err != nil {
 		c.mutex.Lock()
 		call = c.pending[seq]

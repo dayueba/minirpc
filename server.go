@@ -145,20 +145,17 @@ func (server *Server) Start() error {
 	}
 }
 
-func (server *Server) handleConn(conn net.Conn) error {
+func (server *Server) handleConn(rawConn net.Conn) error {
+	conn := wrapConn(rawConn)
+
 	defer conn.Close()
 
 	for {
 		ctx := context.Background()
-		if server.opts.timeout > 0 {
-			// todo: timeout
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(context.Background(), server.opts.timeout)
-			defer cancel()
-		}
 
-		req := protocol.NewMessage()
-		err := req.Decode(conn)
+		//req := protocol.NewMessage()
+		//err := req.Decode(conn)
+		req, err := conn.ReadMessage(ctx)
 		if err == io.EOF {
 			// read compeleted
 			return nil
@@ -168,34 +165,19 @@ func (server *Server) handleConn(conn net.Conn) error {
 			return err
 		}
 
-		//go func() {
-		//
-		//	//rsp, err := server.handle(ctx, frame)
-		//	//if err != nil {
-		//	//	logrus.WithFields(logrus.Fields{
-		//	//		"func": "handleConn",
-		//	//	}).Errorf("s.handle err is not nil, %s", err)
-		//	//}
-		//	//
-		//	//if err = server.write(ctx, conn, rsp); err != nil {
-		//	//	logrus.WithFields(logrus.Fields{
-		//	//		"func": "handleConn",
-		//	//	}).Errorf("server write res err, %s", err)
-		//	//}
-		//	go server.handleRequest(ctx, req, conn)
-		//}()
-
+		// 收到一个msg后 异步处理
 		go server.handleRequest(ctx, req, conn)
 	}
 }
 
-func (server *Server) handleRequest(ctx context.Context, req *protocol.Message, conn net.Conn) {
+func (server *Server) handleRequest(ctx context.Context, req *protocol.Message, conn *Connection) {
 	log := logrus.WithFields(logrus.Fields{
 		"func": "handleRequest",
 	})
 	defer func() {
 		if err := recover(); err != nil {
 			// todo: deal error
+			log.Error(err)
 		}
 	}()
 	var err error
@@ -223,7 +205,7 @@ func (server *Server) handleRequest(ctx context.Context, req *protocol.Message, 
 	}
 	err = codec.Decode(req.Payload, argv)
 	if err != nil {
-
+		log.Error(err)
 	}
 	replyv := reflectTypePools.Get(mtype.ReplyType)
 
@@ -236,14 +218,13 @@ func (server *Server) handleRequest(ctx context.Context, req *protocol.Message, 
 	res.Payload, err = codec.Encode(replyv)
 	defer reflectTypePools.Put(mtype.ReplyType, replyv)
 	if err != nil {
-
+		log.Error(err)
 	}
-	allData, err := res.Encode()
+
+	err = conn.WriteMessage(ctx, res)
 	if err != nil {
-
+		log.Error(err)
 	}
-
-	conn.Write(allData)
 }
 
 // todo: handle error

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"net"
 	"unsafe"
 )
 
@@ -125,16 +124,16 @@ func StringToSliceByte(s string) []byte {
 	return *(*[]byte)(unsafe.Pointer(&h))
 }
 
-func (m *Message) Decode(conn net.Conn) error {
+func (m *Message) Decode(r io.Reader) error {
 	// parse header
-	_, err := io.ReadFull(conn, m.Header[:])
+	_, err := io.ReadFull(r, m.Header[:])
 	if err != nil {
 		return err
 	}
 
 	// total
 	lenData := make([]byte, 4)
-	_, err = io.ReadFull(conn, lenData)
+	_, err = io.ReadFull(r, lenData)
 	if err != nil {
 		return err
 	}
@@ -146,7 +145,7 @@ func (m *Message) Decode(conn net.Conn) error {
 		m.data = make([]byte, totalL)
 	}
 	data := m.data
-	_, err = io.ReadFull(conn, data)
+	_, err = io.ReadFull(r, data)
 	if err != nil {
 		return err
 	}
