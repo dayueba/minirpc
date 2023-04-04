@@ -3,7 +3,9 @@ package minirpc
 import (
 	"bufio"
 	"context"
+	"io"
 	"net"
+	"sync"
 
 	"github.com/dayueba/minirpc/protocol"
 	"github.com/sirupsen/logrus"
@@ -20,6 +22,7 @@ type Connection struct {
 	// state
 
 	closed chan struct{}
+	sync.Once
 }
 
 func (c *Connection) ReadMessage(ctx context.Context) (*protocol.Message, error) {
@@ -59,64 +62,82 @@ func wrapConn(rawConn net.Conn) *Connection {
 	return conn
 }
 
-func (c *Connection) readloop() error {
+func (c *Connection) Close() {
+	c.Once.Do(func() {
+		c.closed <- struct{}{}
+		c.Conn.Close()
+	})
+}
+
+func (c *Connection) readloop() (err error) {
 	// todo: writeloop同理，需要防止启动多个readloop/writeloop
 	log := logrus.WithFields(logrus.Fields{
 		"module": "connection",
 		"func":   "readloop",
 	})
 	defer func() {
-		log.Error("connection readloop exited")
+		if err != nil && err != io.EOF {
+			log.Error("connection readloop exited with error: ", err)
+		} else {
+			log.Info("connection readloop exited")
+		}
+
+		c.Close()
 	}()
 
 	for {
 		select {
 		default:
 			msg := protocol.NewMessage()
-			err := msg.Decode(c.rd)
+			err = msg.Decode(c.rd)
 			if err != nil {
-				return err
+				return
 			}
 			c.readChan <- msg
 		case <-c.closed:
-			return nil
+			return
 		}
 	}
-	return nil
+	return
 }
 
-func (c *Connection) writeloop() error {
+func (c *Connection) writeloop() (err error) {
 	log := logrus.WithFields(logrus.Fields{
 		"module": "connection",
 		"func":   "writeloop",
 	})
 	defer func() {
-		log.Error("connection writeloop exited")
+		if err != nil {
+			log.Error("connection writeloop exited with error: ", err)
+		} else {
+			log.Info("connection writeloop exited")
+		}
+		c.Close()
 	}()
 
 	for {
 		select {
 		case payload := <-c.writeChan:
-			_, err := c.wr.Write(payload)
+			_, err = c.wr.Write(payload)
 			if err != nil {
-				return err
+				return
 			}
 			chanlen := len(c.writeChan)
 			for i := 0; i < chanlen; i++ {
 				payload = <-c.writeChan
-				_, err := c.wr.Write(payload)
+				_, err = c.wr.Write(payload)
 				if err != nil {
-					return err
+					return
 				}
 			}
 			// 主动Flush数据
 			err = c.wr.Flush()
 			if err != nil {
-				return err
+				return
 			}
 		case <-c.closed:
-			return nil
+			return
 		}
 	}
-	return nil
+	return
 }

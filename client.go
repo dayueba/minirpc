@@ -201,7 +201,7 @@ func (c *client) Close() error {
 	c.closing = true
 	c.mutex.Unlock()
 	// todo 关闭readloop 和writeloop
-	c.conn.closed <- struct{}{}
+	c.conn.Close()
 	return nil
 }
 
