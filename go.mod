@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/bytedance/gopkg v0.0.0-20220118071334-3db87571198b // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/sirupsen/logrus"
 
 	"github.com/dayueba/minirpc/protocol"
@@ -127,21 +128,13 @@ func (server *Server) Start() error {
 			return err
 		}
 
-		go func() {
-			defer func() {
-				if err := recover(); err != nil {
-					logrus.WithFields(logrus.Fields{
-						"func": "handleConn",
-					}).Errorf("handle tcp conn panic error, %s", err)
-				}
-			}()
-
+		gopool.Go(func() {
 			if err := server.handleConn(conn); err != nil {
 				logrus.WithFields(logrus.Fields{
 					"func": "handleConn",
 				}).Errorf("handle tcp conn error, %s", err)
 			}
-		}()
+		})
 	}
 }
 
@@ -166,7 +159,9 @@ func (server *Server) handleConn(rawConn net.Conn) error {
 		}
 
 		// 收到一个msg后 异步处理
-		go server.handleRequest(ctx, req, conn)
+		gopool.Go(func() {
+			server.handleRequest(ctx, req, conn)
+		})
 	}
 }
 
