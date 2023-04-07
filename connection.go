@@ -3,12 +3,10 @@ package minirpc
 import (
 	"bufio"
 	"context"
-	"io"
 	"net"
 	"sync"
 
 	"github.com/dayueba/minirpc/protocol"
-	"github.com/sirupsen/logrus"
 )
 
 type Connection struct {
@@ -71,19 +69,19 @@ func (c *Connection) Close() {
 
 func (c *Connection) readloop() (err error) {
 	// todo: writeloop同理，需要防止启动多个readloop/writeloop
-	log := logrus.WithFields(logrus.Fields{
-		"module": "connection",
-		"func":   "readloop",
-	})
-	defer func() {
-		if err != nil && err != io.EOF {
-			log.Error("connection readloop exited with error: ", err)
-		} else {
-			log.Info("connection readloop exited")
-		}
-
-		c.Close()
-	}()
+	//log := logrus.WithFields(logrus.Fields{
+	//	"module": "connection",
+	//	"func":   "readloop",
+	//})
+	//defer func() {
+	//	if err != nil && err != io.EOF {
+	//		log.Error("connection readloop exited with error: ", err)
+	//	} else {
+	//		log.Info("connection readloop exited")
+	//	}
+	//
+	//	c.Close()
+	//}()
 
 	for {
 		select {
@@ -102,18 +100,18 @@ func (c *Connection) readloop() (err error) {
 }
 
 func (c *Connection) writeloop() (err error) {
-	log := logrus.WithFields(logrus.Fields{
-		"module": "connection",
-		"func":   "writeloop",
-	})
-	defer func() {
-		if err != nil {
-			log.Error("connection writeloop exited with error: ", err)
-		} else {
-			log.Info("connection writeloop exited")
-		}
-		c.Close()
-	}()
+	//log := logrus.WithFields(logrus.Fields{
+	//	"module": "connection",
+	//	"func":   "writeloop",
+	//})
+	//defer func() {
+	//	if err != nil {
+	//		log.Error("connection writeloop exited with error: ", err)
+	//	} else {
+	//		log.Info("connection writeloop exited")
+	//	}
+	//	c.Close()
+	//}()
 
 	for {
 		select {
