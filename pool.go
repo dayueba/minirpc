@@ -69,6 +69,7 @@ var callPool = sync.Pool{
 func acquireCall() *Call {
 	return callPool.Get().(*Call)
 }
-func releaseAsyncResult(call *Call) {
+
+func releaseCall(call *Call) {
 	callPool.Put(call)
 }

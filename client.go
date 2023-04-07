@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dayueba/minirpc/protocol"
+	"github.com/sirupsen/logrus"
 )
 
 // ServerError represents an error that has been returned from the remote side of the RPC connection.
@@ -20,8 +21,8 @@ func (e ServerError) Error() string {
 }
 
 var (
-	ErrShutdown             = errors.New("connection is shut down")
-	ErrUnknownSerializeType = errors.New("unknown serialize type")
+	ErrShutdown         = errors.New("connection is shut down")
+	ErrUnsupportedCodec = errors.New("unsupported Codec")
 )
 
 type Call struct {
@@ -39,7 +40,9 @@ func (call *Call) done() {
 	case call.Done <- call:
 		// ok
 	default:
+		logrus.WithField("func", "call.done").Errorf("有消息由于Done chan容量不足而丢弃")
 	}
+	releaseCall(call)
 }
 
 type Client interface {
@@ -94,7 +97,7 @@ func (c *client) readloop() {
 	var err error
 	codec, ok := Codecs[c.opts.SerializeType]
 	if !ok {
-		panic(ErrUnknownSerializeType)
+		panic(ErrUnsupportedCodec)
 	}
 	for err == nil {
 		res, err := c.conn.ReadMessage(context.Background())
@@ -109,15 +112,15 @@ func (c *client) readloop() {
 
 		switch {
 		case call == nil:
-			// 没有正在等待响应的请求，出现这个问题的原因一般是因为 WriteRequest 部分失败，导致我们删除了这个call
+			// 没有正在等待响应的请求，出现这个问题的原因一般是 WriteRequest 部分失败，导致我们删除了这个call
 			// 虽然我们不需要处理这个请求，但是需要把数据读取了
 			// 因为前面已经读取了，所以这里什么都不需要做
 		case res.MessageStatusType() == protocol.Error:
 			// todo：rpc返回错误目前先忽略
+			call.Error = ServerError("rpc server error")
 		default:
 			data := res.Payload
 			if len(data) > 0 {
-
 				err = codec.Decode(data, call.Reply)
 				if err != nil {
 					call.Error = err
@@ -126,6 +129,7 @@ func (c *client) readloop() {
 			call.done()
 		}
 	}
+
 	// Terminate pending calls.
 	c.reqMutex.Lock()
 	c.mutex.Lock()
@@ -173,7 +177,6 @@ func (c *client) CallTimeout(servicePath, serviceMethod string, args any, reply 
 
 func (c *client) Go(servicePath, serviceMethod string, args any, reply any, done chan *Call) *Call {
 	call := acquireCall()
-	defer releaseAsyncResult(call)
 	call.ServiceMethod = serviceMethod
 	call.ServicePath = servicePath
 	call.Args = args
@@ -188,7 +191,7 @@ func (c *client) Go(servicePath, serviceMethod string, args any, reply any, done
 		}
 	}
 	call.Done = done
-	c.send(call)
+	go c.send(call)
 	return call
 }
 
@@ -200,15 +203,11 @@ func (c *client) Close() error {
 	}
 	c.closing = true
 	c.mutex.Unlock()
-	// todo 关闭readloop 和writeloop
 	c.conn.Close()
 	return nil
 }
 
 func (c *client) send(call *Call) {
-	c.reqMutex.Lock()
-	defer c.reqMutex.Unlock()
-
 	// 缓存/注册 此次请求
 	c.mutex.Lock()
 	if c.shutdown || c.closing {
@@ -221,14 +220,15 @@ func (c *client) send(call *Call) {
 	serializeType := c.opts.SerializeType
 	codec, ok := Codecs[serializeType]
 	if !ok {
-		panic(ErrUnknownSerializeType)
+		releaseCall(call)
+		panic(ErrUnsupportedCodec)
 	}
 
 	seq := c.seq
 	c.seq++
 	c.pending[seq] = call
 	c.mutex.Unlock()
-	call.Seq = c.seq
+	call.Seq = seq
 
 	// 发送请求
 	req := protocol.NewMessage()
