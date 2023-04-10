@@ -228,7 +228,7 @@ func (server *Server) handleError(res *protocol.Message, err error) (*protocol.M
 	return res, err
 }
 
-func (server *Server) sendResponse(ctx context.Context, conn net.Conn, err error, req, res *protocol.Message) {
-	data, _ := res.Encode()
-	conn.Write(data)
-}
+//func (server *Server) sendResponse(ctx context.Context, conn net.Conn, err error, req, res *protocol.Message) {
+//	data := res.Encode()
+//	conn.Write(*data)
+//}

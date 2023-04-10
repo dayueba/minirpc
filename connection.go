@@ -16,7 +16,7 @@ type Connection struct {
 	// read chan
 	readChan chan *protocol.Message
 	// write chan
-	writeChan chan []byte
+	writeChan chan *[]byte
 	// state
 
 	closed chan struct{}
@@ -33,10 +33,8 @@ func (c *Connection) ReadMessage(ctx context.Context) (*protocol.Message, error)
 }
 
 func (c *Connection) WriteMessage(ctx context.Context, message *protocol.Message) error {
-	data, err := message.Encode()
-	if err != nil {
-		return err
-	}
+	data := message.Encode()
+	defer protocol.FreeMsg(message)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -51,7 +49,7 @@ func wrapConn(rawConn net.Conn) *Connection {
 		rd:        bufio.NewReaderSize(rawConn, 4096), //创建一个大小为4KB的读缓冲
 		wr:        bufio.NewWriterSize(rawConn, 1024), //创建一个大小为1KB的写缓冲
 		readChan:  make(chan *protocol.Message, 10),
-		writeChan: make(chan []byte, 10),
+		writeChan: make(chan *[]byte, 10),
 		closed:    make(chan struct{}, 1),
 	}
 
@@ -86,7 +84,7 @@ func (c *Connection) readloop() (err error) {
 	for {
 		select {
 		default:
-			msg := protocol.NewMessage()
+			msg := protocol.GetPooledMsg()
 			err = msg.Decode(c.rd)
 			if err != nil {
 				return
@@ -116,17 +114,19 @@ func (c *Connection) writeloop() (err error) {
 	for {
 		select {
 		case payload := <-c.writeChan:
-			_, err = c.wr.Write(payload)
+			_, err = c.wr.Write(*payload)
 			if err != nil {
 				return
 			}
+			protocol.PutData(payload)
 			chanlen := len(c.writeChan)
 			for i := 0; i < chanlen; i++ {
 				payload = <-c.writeChan
-				_, err = c.wr.Write(payload)
+				_, err = c.wr.Write(*payload)
 				if err != nil {
 					return
 				}
+				protocol.PutData(payload)
 			}
 			// 主动Flush数据
 			err = c.wr.Flush()

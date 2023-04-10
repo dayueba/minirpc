@@ -23,19 +23,20 @@ func main() {
 	wg.Add(clientsNum * 10)
 	for _, client := range clients {
 		for i := 0; i < 10; i++ {
-			go func(client minirpc.Client) {
+			go func(client minirpc.Client, i int) {
 				defer wg.Done()
 
 				reply := new(int)
-				err := client.Call("Arith", "Multiply", data.Args{
-					A: 1,
-					B: 2,
-				}, reply)
-				if err != nil || *reply != 2 {
+				args := data.Args{
+					A: i + 1,
+					B: i + 2,
+				}
+				err := client.Call("Arith", "Multiply", args, reply)
+				if err != nil || *reply != args.A*args.B {
 					panic(err)
 				}
 				fmt.Println(*reply)
-			}(client)
+			}(client, i)
 		}
 	}
 

@@ -231,7 +231,7 @@ func (c *client) send(call *Call) {
 	call.Seq = seq
 
 	// 发送请求
-	req := protocol.NewMessage()
+	req := protocol.GetPooledMsg()
 	req.SetSeq(seq)
 	req.SetSerializeType(c.opts.SerializeType)
 	req.ServicePath = call.ServicePath
@@ -244,6 +244,7 @@ func (c *client) send(call *Call) {
 		c.mutex.Unlock()
 		call.Error = err
 		call.done()
+		protocol.FreeMsg(req)
 		return
 	}
 	req.Payload = data

@@ -5,7 +5,11 @@ import (
 	"encoding/binary"
 	"io"
 	"unsafe"
+
+	"github.com/dayueba/minirpc/pool"
 )
+
+var bufferPool = pool.NewLimitedPool(512, 4096)
 
 const headerLen = 9
 
@@ -82,41 +86,64 @@ func (h *Header) SetSeq(seq uint64) {
 	binary.BigEndian.PutUint64(h[1:], seq)
 }
 
-func (m *Message) Encode() ([]byte, error) {
+func (m *Message) Encode() *[]byte {
+	//bytebuffer := bytebufferpool.Get()
+
 	spL := len(m.ServicePath)
 	smL := len(m.ServiceMethod)
 	dataLen := (4 + spL) + (4 + smL) + (4 + len(m.Payload))
 	// header + dataLen + spLen + sp + smLen + sm + payloadLen + payload
 	l := headerLen + 4 + dataLen
+
+	buffer := bufferPool.Get(l)
+
+	// header
+	copy(*buffer, m.Header[:])
+	// totalLen
+	binary.BigEndian.PutUint32((*buffer)[9:13], uint32(dataLen))
+	// path
+	binary.BigEndian.PutUint32((*buffer)[13:17], uint32(spL))
+	copy((*buffer)[17:17+spL], StringToSliceByte(m.ServicePath))
+	// method
+	binary.BigEndian.PutUint32((*buffer)[17+spL:21+spL], uint32(smL))
+	copy((*buffer)[21+spL:21+spL+smL], StringToSliceByte(m.ServiceMethod))
+	// payload
+	binary.BigEndian.PutUint32((*buffer)[21+spL+smL:25+spL+smL], uint32(len(m.Payload)))
+	copy((*buffer)[25+spL+smL:], m.Payload)
+
+	return buffer
+}
+
+func (m *Message) Encode2() []byte {
+	spL := len(m.ServicePath)
+	smL := len(m.ServiceMethod)
+	dataLen := (4 + spL) + (4 + smL) + (4 + len(m.Payload))
+	// header + dataLen + spLen + sp + smLen + sm + payloadLen + payload
+	l := headerLen + 4 + dataLen
+
 	buffer := bytes.NewBuffer(make([]byte, 0, l))
 	// header
 	buffer.Write(m.Header[:])
+
 	// totalLen
-	if err := binary.Write(buffer, binary.BigEndian, uint32(dataLen)); err != nil {
-		return nil, err
-	}
+	binary.Write(buffer, binary.BigEndian, uint32(dataLen))
+
 	// path
-	if err := binary.Write(buffer, binary.BigEndian, uint32(spL)); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buffer, binary.BigEndian, StringToSliceByte(m.ServicePath)); err != nil {
-		return nil, err
-	}
+	binary.Write(buffer, binary.BigEndian, uint32(spL))
+	binary.Write(buffer, binary.BigEndian, StringToSliceByte(m.ServicePath))
 	// method
-	if err := binary.Write(buffer, binary.BigEndian, uint32(smL)); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buffer, binary.BigEndian, StringToSliceByte(m.ServiceMethod)); err != nil {
-		return nil, err
-	}
+	binary.Write(buffer, binary.BigEndian, uint32(smL))
+	binary.Write(buffer, binary.BigEndian, StringToSliceByte(m.ServiceMethod))
+
 	// payload
-	if err := binary.Write(buffer, binary.BigEndian, uint32(len(m.Payload))); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buffer, binary.BigEndian, m.Payload); err != nil {
-		return nil, err
-	}
-	return buffer.Bytes(), nil
+	binary.Write(buffer, binary.BigEndian, uint32(len(m.Payload)))
+	binary.Write(buffer, binary.BigEndian, m.Payload)
+
+	return buffer.Bytes()
+}
+
+func PutData(data *[]byte) {
+	bufferPool.Put(data)
 }
 
 func StringToSliceByte(s string) []byte {
@@ -125,6 +152,7 @@ func StringToSliceByte(s string) []byte {
 	return *(*[]byte)(unsafe.Pointer(&h))
 }
 
+// Decode 非线程安全
 func (m *Message) Decode(r io.Reader) error {
 	// parse header
 	_, err := io.ReadFull(r, m.Header[:])
@@ -186,4 +214,22 @@ func (m *Message) Clone() *Message {
 	c.ServicePath = m.ServicePath
 	c.ServiceMethod = m.ServiceMethod
 	return c
+}
+
+// Reset clean data of this message but keep allocated data
+func (m *Message) Reset() {
+	resetHeader(m.Header)
+	m.Payload = []byte{}
+	m.data = m.data[:0]
+	m.ServicePath = ""
+	m.ServiceMethod = ""
+}
+
+var (
+	zeroHeaderArray Header
+	zeroHeader      = zeroHeaderArray[1:]
+)
+
+func resetHeader(h *Header) {
+	copy(h[:], zeroHeader)
 }
