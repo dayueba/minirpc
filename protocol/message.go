@@ -46,7 +46,6 @@ type Message struct {
 }
 
 func NewMessage() *Message {
-	// todo 对象池
 	header := Header([headerLen]byte{})
 
 	return &Message{
